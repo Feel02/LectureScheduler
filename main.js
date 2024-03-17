@@ -1,24 +1,77 @@
 const fs = require('fs');
 const readline = require('readline');
+const { start } = require('repl');
 const {scheduler} = require('timers/promises');
 const prompt = require('prompt-sync')({ sigint: true });
 
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-const startHour = 8; // 8.00 AM
-const endHour = 17; // 5.00 PM
+const startHour = 0; // 9.00 AM
+const endHour = 540; // 6.00 PM
 
-let blockHourName = 'noBlockedHour';                                                            //if no blockedHour assigned
+let outputSchedule = [];
+const coursesFilePath = 'Fall_Courses.csv';
+const roomsFilePath = 'Classroom_Capacities.csv';
+var courses = [];
+var rooms = [];
 
-function timeToMinutes(time){                                                                   //time to min
-    const [hour, minute] = time.match(/(\d+):(\d+)/).slice(1, 3);
-    return parseInt(hour) * 60 + parseInt(minute);
-}
+(async () => {
+    var initialSchedule = await assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, rooms);
 
-function minutesToTime(minutes){                                                                //min to time
-    const hour = Math.floor(minutes / 60) % 24;
-    const minute = minutes % 60;
-    return `${hour < 10 ? '0' + hour : hour}:${minute === 0 ? '00' : minute < 10 ? '0' + minute : minute}`;
-}
+    const optimizedSchedule = await hillClimbingScheduler(initialSchedule, courses, rooms, 50000);
+
+    var test = [];
+    test.push('course_code,day,time,duration,classroom,grade,department,course_name')
+
+    optimizedSchedule
+    .sort(
+        (a, b) => {
+            let timeA = a.startTime;
+            let timeB = b.startTime;
+
+            if (timeA < timeB)
+                return -1;
+
+            if (timeA > timeB)
+                return 1;
+
+            return 0;
+        }
+    )
+    .sort(
+        (a, b) => {
+            let dayA = days.indexOf(a.day);
+            let dayB = days.indexOf(b.day);
+
+            if (dayA < dayB)
+                return -1;
+
+            if (dayA > dayB)
+                return 1;
+
+            return 0;
+        }
+    )
+    .forEach(entry => {
+        let course_code = entry.courseId;
+        let classroom = entry.room;
+        let day = days.indexOf(entry.day);
+        let time = entry.startTime;
+        let duration = entry.course.duration;
+        let grade = entry.course.year;
+        let department = entry.course.department;
+        let course_name = entry.course.courseName;
+
+        test.push(course_code + ',' + day + ',' + time + ',' + duration + ',' + classroom + ',' + grade + ',' + department + ',' + course_name);
+
+    });
+
+    console.log('The output is created.')
+
+    // Write schedule to csv file
+    const outputData = test.join('\n');
+    fs.writeFileSync('Exam_Schedule.csv', outputData, 'utf-8');
+
+})();
 
 async function readFileLines(filePath){                                                         //take the input
     const fileStream = fs.createReadStream(filePath);
@@ -35,7 +88,7 @@ async function readFileLines(filePath){                                         
     return lines.slice(1);
 }
 
-async function assignCoursesToRooms(coursesFilePath, roomsFilePath,courseDetails, courses, rooms) {                 //firstly create try 0 schedule
+async function assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, rooms) {                 //firstly create try 0 schedule
     const coursesLines = await readFileLines(coursesFilePath);
     const roomsLines = await readFileLines(roomsFilePath);
 
@@ -45,110 +98,70 @@ async function assignCoursesToRooms(coursesFilePath, roomsFilePath,courseDetails
     }
     rooms.sort((a, b) => a.roomSize - b.roomSize);
 
-    const tempCourseDetails = coursesLines.map(line => ({                                       //take the courses and rooms and create objects
+    let courseDetails = coursesLines.map(line => ({                                       //take the courses and rooms and create objects
         professorName: line.split(';')[9],
         courseId: line.split(';')[1],
         duration: parseInt((line.split(';')[5]).split('+')[0]) * 60 == 0 ? parseInt((line.split(';')[5]).split('+')[1]) * 60 : parseInt((line.split(';')[5]).split('+')[0]) * 60,
         numberOfStudents: parseInt((line.split(';')[3])),
         department: line.split(';')[10],
-        year: line.split(';')[7],
+        year: parseInt(line.split(';')[7]),
         facetoface: line.split(';')[4],
         courseName: line.split(';')[2]
     }));
 
-    for(const detail of tempCourseDetails){
-        courseDetails.push(detail);                                                         //just like the rooms this for ensures we're saving the data
+    for(const course of courseDetails){
+        courses.push(course);
     }
+    courses.sort((a,b) => a.duration - b.duration);
 
     let schedule = [];                                                                      //our schedule
 
     blockedDayIndex = -1;                                                                   //we assume no blockday
-    let flagBlocked = 0;                                                                    //isBlocked?
-
                                                                                             // Block a specific hour
     blockHour = prompt('Do you want to block a specific hour? (y/n): ').toLowerCase() === 'y';
-    let blockedName,blockedProf,blockedDepartment,blockedMin,blockedNumber,blockedYear;
+    let blockedName,blockedProf,blockedDepartment,blockedMin,blockedNumber,blockedYear,blockFullName;
     blockedMin = 0;
     if(blockHour){
         flagBlocked = 0;
-        blockedName = prompt('Name of the event? (Example: TIT101): ');
+        blockedName = prompt('Name of the lecture? (Example: TIT101): ');
         blockedProf = prompt('Name of the proffesor? (Example: Dr. Öğr. Üyesi FADİ YILMAZ): ');
-        blockedDepartment = prompt('Name of the department? (Example: BİLGİSAYAR MÜH.): ');
+        blockedDepartment = prompt('Name of the department? (Example: CENG): ');
         blockedMin = prompt('How many minutes will it take? (Example: 60): ');
         blockedNumber = prompt('How many students will take? (Example: 78): ');
         blockedYear = prompt('Which year students will take the lecture? (Example: 2)');
-        
+        blockFullName = prompt('What is the full name of the lecture?');
+
         blockedNumber = parseInt(blockedNumber);
         blockedMin = parseInt(blockedMin);
         blockedYear = parseInt(blockedYear);
 
         try{
-            courseDetails.push({ professorName: blockedProf, courseId: blockedName, duration: blockedMin, numberOfStudents: blockedNumber, department: blockedDepartment, year: blockedYear});
+            courses.push({ professorName: blockedProf, courseId: blockedName, duration: blockedMin, numberOfStudents: blockedNumber, department: blockedDepartment, year: blockedYear,facetoface:'classroom', courseName:blockFullName});
         } catch(e){
             console.log('Invalid input. Blocking skipped.');
         }
     }
-                                                                                                //remove the same id lectures (temporary)
-    for(const {numberOfStudents, professorName, courseId, duration,department,year,facetoface} of courseDetails){
-        let course = courses.find(c => c.name === courseId);
 
-        if(!course){
-            if(duration > 0 && (facetoface === 'classroom' || facetoface === 'lab')){
-                course = { name: courseId, count: numberOfStudents, std: year, prof: professorName,department: department};
-                courses.push(course);
-            }
+    for(const course of courses){
+        if(course.facetoface === 'online'){
+            continue;
+        }
+        else if(course.facetoface === 'lab'){
+            schedule.push({day: days[Math.floor(Math.random() * days.length)], startTime: startHour, finishTime:course.duration, courseId: course.courseId, room: 'LAB', course: course});
         }
         else{
-            //departman kontrol ona göre ekleme yoksa aynı departmansa aynı ana koy
-        }
-    }
+            let assigned = false;
 
-    backup = JSON.parse(JSON.stringify(courses));                                                   //backup of the courses
+            for(const room of rooms){                                                               //check every class
+                if(assigned)
+                    break;
 
-    for(const {numberOfStudents, professorName, courseId, duration,department,year,facetoface} of courseDetails){
-        let tempInx;                                                                                //create the first initial guess without any restriction
+                if(parseInt(room.roomSize) < course.numberOfStudents)                                      //if the size is not enough skip the class
+                    continue;
 
-        tempInx = courses.findIndex(course => course.name === courseId);                            //find the index
+                schedule.push({day: days[Math.floor(Math.random() * days.length)], startTime: startHour, finishTime:course.duration, courseId: course.courseId, room: room.roomId, course: course});
+                assigned = true;
 
-        if(tempInx != -1){                                                                          //if it's found
-
-            if (tempInx == 0)                                                                       //if it's the first, splice the first
-                courses.splice(0, 1);
-
-            else{
-                courses.splice(tempInx, 1);                                                   //esle splice the course
-            }
-            
-            if(facetoface === 'lab'){
-                schedule.push(`${days[Math.floor(Math.random() * days.length)]},${minutesToTime(startHour*60)} - ${minutesToTime(startHour*60 + duration)}, ${courseId} - Room LAB`);
-            }
-            else{
-                let assigned = false;
-
-                for(const room of rooms){                                                               //check every class
-                    if(assigned)
-                        break;
-
-                    if(parseInt(room.roomSize) < numberOfStudents)                                      //if the size is not enough skip the class
-                        continue;
-
-                    const slot = findNextAvailableSlot(duration, room);                                 //find available time
-
-                    if(slot){                                                                           //if so place the lecture
-                        const {dayIndex, startTime, endTime} = slot;
-
-                        schedule.push(`${days[dayIndex]},${minutesToTime(startTime)} - ${minutesToTime(endTime)}, ${courseId} - Room ${room.roomId}`);
-                        room.nextAvailableTime = endTime;
-                        room.nextAvailableDay = dayIndex;
-                        room.blockedTime = Math.max(room.blockedTime, endTime);
-                        assigned = true;
-                    }
-
-                }
-
-                if(!assigned) {
-                    notAssaignedCourseExist = true;
-                }
             }
         }
     }
@@ -156,80 +169,54 @@ async function assignCoursesToRooms(coursesFilePath, roomsFilePath,courseDetails
     return schedule;
 }
 
-function findNextAvailableSlot(duration, room){                                             //for finding the next slot of class 
-    let dayIndex = room.nextAvailableDay;
-    let startTime = room.nextAvailableTime;
-
-    while(dayIndex < days.length % (days.length+1)){
-        const endTime = startTime + duration;
-
-        if(startTime >= startHour * 60 && endTime <= endHour * 60)
-            return { dayIndex, startTime, endTime };
-
-        dayIndex++;
-        startTime = startHour * 60;
-    }
-    return null; 
-}
-
-function errorCalculateFunction(schedule, courses){                                          //error calculation function
+function errorCalculateFunction(schedule){                                          //error calculation function
     let error = 0;
 
     for(let i = 0; i < schedule.length; i++){
 
-        const [day1, time1, course1] = schedule[i].split(',').map(str => str.trim());
-        const [start1, end1] = time1.split(' - ').map(str => str.trim());
-        const [coursename1, Roomroom1] = course1.split(' - ').map(str => str.trim());
-        const [trash, room1] = Roomroom1.split(' ').map(str => str.trim());                   //it was 'Room C510' so I did one more trim for the th Room word
+        const day1 = schedule[i].day;
+        const start1 = schedule[i].startTime;
+        const end1 = schedule[i].finishTime;
+        const coursename1 = schedule[i].courseId;
+        const duration1 = schedule[i].course.duration;
 
-        const start1Minutes = timeToMinutes(start1);
-        const end1Minutes = timeToMinutes(end1);
-
-        var index1 = courses.findIndex(course => course.name === coursename1);
+        if(coursename1.substr(0,4) === 'CENG'){
+            if(start1 < 60){
+                error -= 100;
+            }
+        }
 
         for(let j = i + 1; j < schedule.length; j++){
 
-            const [day2, time2, course2] = schedule[j].split(',').map(str => str.trim());
+            const day2 = schedule[j].day;
 
             if(day1 === day2){
 
-                const [coursename2, Roomroom2] = course2.split(' - ').map(str => str.trim());
-                var index2 = courses.findIndex(course => course.name === coursename2);
+                const duration2 = schedule[j].course.duration;
 
-                if(courses[index1].duration != 0 && courses[index2].duration != 0){
+                if(duration1 != 0 && duration2 != 0){
+                    
+                    const coursename2 = schedule[j].courseId;
+
                     if(coursename1 !== coursename2){
 
-                        const [start2, end2] = time2.split(' - ').map(str => str.trim());
-                        const [trashh, room2] = Roomroom2.split(' ').map(str => str.trim());                   //it was 'Room C510' so I did one more trim for the th Room word
+                        const start2 = schedule[j].startTime;
+                        const end2 = schedule[j].finishTime;
 
-                        const start2Minutes = timeToMinutes(start2);
-                        const end2Minutes = timeToMinutes(end2);
+                        if((start1 <= end2 && end1 >= start2) || (start2 <= end1 && end2 >= start1)){
 
-                        if((start1Minutes < end2Minutes && end1Minutes > start2Minutes) || (start2Minutes < end1Minutes && end2Minutes > start1Minutes)){
-                            if(courses[index1].prof === courses[index2].prof){
+                            if(schedule[i].course.professorName === schedule[j].course.professorName){
                                 error -= 100; //lecturer conflict 
                             }
     
-                            if(courses[index1].department === courses[index2].department){
-                                if(parseInt(courses[index1].std) == parseInt(courses[index2].std)){
+                            if(schedule[i].course.department === schedule[j].course.department){
+                                if(parseInt(schedule[i].course.year) === parseInt(schedule[j].course.year)){
                                     error -= 100; //year conflict 
                                 }
                             }
 
-                            if(room1 === room2 && room1 !== 'LAB'){
-                                error -= 200; //class conflict 
-                            }
-                        }
-                        else{
-                            if(courses[index1].department === courses[index2].department){
-                                if(parseInt(courses[index1].std) == parseInt(courses[index2].std)){
-                                    if(start1Minutes < start2Minutes){
-                                        error -= (start2Minutes - end1Minutes)/10;
-                                    }
-                                    else{
-                                        error -= (start1Minutes - end2Minutes)/10;
-                                    }
-                                }
+                            if(schedule[i].room === schedule[j].room && schedule[i].room !== 'LAB'){
+                                error -= 150; //class conflict 
                             }
                         }
                     }
@@ -237,7 +224,6 @@ function errorCalculateFunction(schedule, courses){                             
             }
         }
     }
-
     return error;
 }
 
@@ -247,7 +233,7 @@ function roundNearest60(num){
 
 async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterations){
     let currentSchedule = [...initialSchedule];
-    let currentError = errorCalculateFunction(currentSchedule, courses);
+    let currentError = errorCalculateFunction(currentSchedule);
 
     if(currentError == 0)
         return initialSchedule;
@@ -257,55 +243,52 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
         let newSchedule = [...currentSchedule];
         const randomIndex = Math.floor(Math.random() * newSchedule.length);                 //select course
 
-        const [day, time, course] = newSchedule[randomIndex].split(',').map(str => str.trim());
-        const [start, end] = time.split(' - ').map(str => str.trim());
-        const [coursename, Roomroom] = course.split(' - ').map(str => str.trim());
-        const [trash, room] = Roomroom.split(' ').map(str => str.trim());                   //it was 'Room C510' so I did one more trim for the th Room word
+        var day = newSchedule[randomIndex].day;
+        var start = newSchedule[randomIndex].startTime;
+        var end = newSchedule[randomIndex].finishTime;
+        var coursename = newSchedule[randomIndex].courseId;
+        var duration = newSchedule[randomIndex].course.duration;
+        var room = newSchedule[randomIndex].room;
+        const course = newSchedule[randomIndex].course;
 
-        const start1Minutes = timeToMinutes(start);
-        const end1Minutes = timeToMinutes(end);
-        var index1 = courses.findIndex(course => course.name === coursename);
-
-        if(iteration>maxIterations*0.95){
+        if(iteration>maxIterations*0.9){
 
             var flag = false;
     
             for(let j = 0; j < newSchedule.length; j++){
 
                 if(j != randomIndex){
-                    const [day2, time2, course2] = newSchedule[j].split(',').map(str => str.trim());
-                    const [coursename2, Roomroom2] = course2.split(' - ').map(str => str.trim());
-                    var index2 = courses.findIndex(course => course.name === coursename2);
+                    const day2 = newSchedule[j].day;
         
                     if(day === day2){
-                        if(courses[index1].duration != 0 && courses[index2].duration != 0){
+                        const duration2 = newSchedule[j].course.duration;
 
-                            const [trashh, room2] = Roomroom2.split(' ').map(str => str.trim());                   //it was 'Room C510' so I did one more trim for the th Room word
+                        if(duration != 0 && duration2 != 0){
+                            const coursename2 = newSchedule[j].courseId;
 
                             if(coursename !== coursename2){
+                                const start2 = newSchedule[j].startTime;
+                                const end2 = newSchedule[j].finishTime;
 
-                                const [start2, end2] = time2.split(' - ').map(str => str.trim());
-                                const start2Minutes = timeToMinutes(start2);
-                                const end2Minutes = timeToMinutes(end2);
+                                if((start < end2 && end > start2) || (start2 < end && end2 > start)){
+                                    let room2 = newSchedule[j].room;
 
-                                if((start1Minutes < end2Minutes && end1Minutes > start2Minutes) || (start2Minutes < end1Minutes && end2Minutes > start1Minutes)){
-                                    if(courses[index1].prof === courses[index2].prof){
-
+                                    if(newSchedule[randomIndex].course.professorName === newSchedule[j].course.professorName){
                                         let counter = 0;
 
-                                        while(counter < 10 && !flag){
+                                        while(counter < 20 && !flag){
                                             if(Math.random < 0.3){
                                                 const newDayIndex = Math.floor(Math.random() * days.length); 
-                                                newSchedule[randomIndex] = `${days[newDayIndex]},${start} - ${end}, ${coursename} - Room ${room}`;
-                                                                                                                                    //add to the new schedule
+                                                newSchedule[randomIndex] = {day: days[newDayIndex], startTime: start, finishTime:end, courseId: coursename, room: room, course: course};
                                             }
                                             else{
-                                                const newStartTime = startHour*60 +  roundNearest60(Math.round(Math.random() * ((endHour - startHour) * 60 - end1Minutes + start1Minutes)))
-                                                newSchedule[randomIndex] = `${day},${minutesToTime(newStartTime)} - ${minutesToTime(newStartTime + timeToMinutes(end) - timeToMinutes(start))}, ${coursename} - Room ${room}`;
-                                                                                                                                    //add to the new schedule
+                                                let newStartTime = (start + (Math.floor(Math.random() * (9 - (end + start) / 60)) * 60) % 540 )
+                                                if(start == newStartTime)
+                                                    newStartTime += 60
+                                                newSchedule[randomIndex] = {day: day, startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: room, course: course};
                                             }
     
-                                            const newError = errorCalculateFunction(newSchedule, courses);                      //calculate the error
+                                            const newError = errorCalculateFunction(newSchedule);                      //calculate the error
     
                                             if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
                                                 currentSchedule = newSchedule;                                                  //take the new schedule
@@ -313,6 +296,9 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
                                                 console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2));
                                                 console.log('prof hatası')
                                                 flag = true;
+                                                day = newSchedule[randomIndex].day;
+                                                start = newSchedule[randomIndex].startTime;
+                                                end = newSchedule[randomIndex].finishTime;
                                             }
                                             if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
                                                 console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
@@ -327,24 +313,24 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
 
                                     }
             
-                                    else if(courses[index1].department === courses[index2].department){
-                                        if(parseInt(courses[index1].std) == parseInt(courses[index2].std)){
+                                    else if(newSchedule[randomIndex].course.department === newSchedule[j].course.department){
+                                        if(newSchedule[randomIndex].course.year === newSchedule[j].course.year){
 
                                             let counter = 0;
 
-                                            while(counter < 10 && !flag){
+                                            while(counter < 20 && !flag){
                                                 if(Math.random < 0.3){
                                                     const newDayIndex = Math.floor(Math.random() * days.length); 
-                                                    newSchedule[randomIndex] = `${days[newDayIndex]},${start} - ${end}, ${coursename} - Room ${room}`;
-                                                                                                                                        //add to the new schedule
+                                                    newSchedule[randomIndex] = {day: days[newDayIndex], startTime: start, finishTime:end, courseId: coursename, room: room, course: course};
                                                 }
                                                 else{
-                                                    const newStartTime = startHour*60 +  roundNearest60(Math.round(Math.random() * ((endHour - startHour) * 60 - end1Minutes + start1Minutes)))
-                                                    newSchedule[randomIndex] = `${day},${minutesToTime(newStartTime)} - ${minutesToTime(newStartTime + timeToMinutes(end) - timeToMinutes(start))}, ${coursename} - Room ${room}`;
-                                                                                                                                        //add to the new schedule 
+                                                    let newStartTime = (start + (Math.floor(Math.random() * (9 - (end + start) / 60)) * 60) % 540 )
+                                                    if(start == newStartTime)
+                                                        newStartTime += 60
+                                                    newSchedule[randomIndex] = {day: day, startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: room, course: course};
                                                 }
     
-                                                const newError = errorCalculateFunction(newSchedule, courses);                      //calculate the error
+                                                const newError = errorCalculateFunction(newSchedule);                      //calculate the error
             
                                                 if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
                                                     currentSchedule = newSchedule;                                                  //take the new schedule
@@ -352,7 +338,9 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
                                                     console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2));
                                                     console.log('sınıf hatası')
                                                     flag = true;
-                                                    
+                                                    day = newSchedule[randomIndex].day;
+                                                    start = newSchedule[randomIndex].startTime;
+                                                    end = newSchedule[randomIndex].finishTime;
                                                 }
                                                 if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
                                                     console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
@@ -372,16 +360,16 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
 
                                         let counter = 0;
 
-                                        while(counter < 10 && !flag){
+                                        while(counter < 20 && !flag){
                                             let newRoom = room;                                                                 //hold the current class
                                             let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === room);
                                             if(roomInx != -1 && roomInx != rooms.length-1){
                                                 newRoom = rooms[rooms.findIndex(roomTemp => roomTemp.roomId === room) + 1].roomId;
                                             }
                                                                                                                                 //select random new day and our
-                                            newSchedule[randomIndex] = `${day},${start} - ${end}, ${coursename} - Room ${newRoom}`;
+                                            newSchedule[randomIndex] = {day: day, startTime: start, finishTime:end, courseId: coursename, room: newRoom, course: course};
                                                                                                                                 //add to the new schedule
-                                            const newError = errorCalculateFunction(newSchedule, courses);                      //calculate the error
+                                            const newError = errorCalculateFunction(newSchedule);                      //calculate the error
 
                                             if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
                                                 currentSchedule = newSchedule;                                                  //take the new schedule
@@ -389,6 +377,7 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
                                                 console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2));
                                                 console.log('oda hatası')
                                                 flag = true;
+                                                room = newSchedule[randomIndex].room;
                                             }
                                             if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
                                                 console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
@@ -413,58 +402,60 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
                 let newRoom = room;                                                                                         //hold the current class
 
                 const newDayIndex = Math.floor(Math.random() * days.length); 
-                const newStartTime = startHour*60 +  roundNearest60(Math.round(Math.random() * ((endHour - startHour) * 60 - end1Minutes + start1Minutes)))
-                if(Math.random() < 0.01){
+                let newStartTime = (start + (Math.floor(Math.random() * (9 - (end + start) / 60)) * 60) % 540 )
+
+                if(Math.random() < 0.1){                                                              
                     let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === room);
                     if(roomInx != -1 && roomInx != rooms.length-1){
                         newRoom = rooms[rooms.findIndex(roomTemp => roomTemp.roomId === room) + 1].roomId;
                     }
                 }
                                                                                                     //select random new day and our
-                newSchedule[randomIndex] = `${days[newDayIndex]},${minutesToTime(newStartTime)} - ${minutesToTime(newStartTime + end1Minutes - start1Minutes)}, ${coursename} - Room ${newRoom}`;
+                newSchedule[randomIndex] = {day: days[newDayIndex], startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: newRoom, course: course};
                                                                                                     //add to the new schedule
-                const newError = errorCalculateFunction(newSchedule, courses);                      //calculate the error
+                const newError = errorCalculateFunction(newSchedule);                      //calculate the error
 
                 if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
                     currentSchedule = newSchedule;                                                  //take the new schedule
                     currentError = newError;
                     console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2));
+                    day = newSchedule[randomIndex].day;
+                    start = newSchedule[randomIndex].startTime;
+                    end = newSchedule[randomIndex].finishTime;
+                    room = newSchedule[randomIndex].room;
                 }
                 if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
                     console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
                     return currentSchedule;
                 }
             }
-            else{
-                iteration-=3;
-            }
         }
         else{
-            let newRoom = room;                                                                                         //hold the current class
-            let newStartTime = start1Minutes;
+            let newRoom = newSchedule[randomIndex].room;                                                                                         //hold the current class
+            let newStartTime = start;
             let newDayIndex = days.findIndex(dayy => dayy === day);
 
             let chance = Math.random();
 
-            if(chance < 0.1){
-                let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === room);
+            if(chance < 0.01){
+                let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === newRoom);
                 if(roomInx != -1 && roomInx != rooms.length-1){
-                    newRoom = rooms[rooms.findIndex(roomTemp => roomTemp.roomId === room) + 1].roomId;
+                    newRoom = rooms[roomInx + 1].roomId;
                 }
             }
-
             else if(chance < 0.6){
-                newStartTime = startHour*60 +  roundNearest60(Math.round(Math.random() * ((endHour - startHour) * 60 - end1Minutes + start1Minutes)))
-                if(start1Minutes == newStartTime)
+                newStartTime = (start + (Math.floor(Math.random() * (9 - (end + start) / 60)) * 60) % 540 )
+                if(start == newStartTime)
                     newStartTime += 60
             }
             else{
                 newDayIndex = Math.floor(Math.random() * days.length); 
             }
                                                                                                 //select random new day and our
-            newSchedule[randomIndex] = `${days[newDayIndex]},${minutesToTime(newStartTime)} - ${minutesToTime(newStartTime + end1Minutes - start1Minutes)}, ${coursename} - Room ${newRoom}`;
+            newSchedule[randomIndex] = {day: days[newDayIndex], startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: newRoom, course: course};
                                                                                                 //add to the new schedule
-            const newError = errorCalculateFunction(newSchedule, courses);                      //calculate the error
+            
+            const newError = errorCalculateFunction(newSchedule);                      //calculate the error
 
             if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
                 currentSchedule = newSchedule;                                                  //take the new schedule
@@ -481,112 +472,4 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
     return currentSchedule;
 }
 
-
-
-const coursesFilePath = 'Fall_Courses.csv';
-const roomsFilePath = 'Classroom_Capacities.csv';
-var courses = [];
-var rooms = [];
-var courseDetails = [];
-var backup;
-
-
-(async () => {
-    var initialSchedule = await assignCoursesToRooms(coursesFilePath, roomsFilePath,courseDetails, courses, rooms);
-
-    const optimizedSchedule = await hillClimbingScheduler(initialSchedule, backup, rooms, 5000);
-
-    var test = [];
-    test.push('course_code,day,time,duration,classroom,grade,department,course_name')
-
-    optimizedSchedule
-    .sort(
-        (a, b) => {
-            let timeA = timeToMinutes(a.split(',')[1].split(' - ')[0]);
-            let timeB = timeToMinutes(b.split(',')[1].split(' - ')[0]);
-
-            if (timeA < timeB)
-                return -1;
-
-            if (timeA > timeB)
-                return 1;
-
-            return 0;
-        }
-    )
-    .sort(
-        (a, b) => {
-            let dayA = days.indexOf(a.split(',')[0]);
-            let dayB = days.indexOf(b.split(',')[0]);
-
-            if (dayA < dayB)
-                return -1;
-
-            if (dayA > dayB)
-                return 1;
-
-            return 0;
-        }
-    )
-    .forEach(entry => {
-        let course_code = entry.split(',')[2].split(' - ')[0].replace(/\s/g, "");;
-        var inx = courseDetails.findIndex(course => course.courseId === course_code);
-
-        let classroom = entry.split(',')[2].split(' - ')[1].split(' ')[1];
-        let day = days.indexOf(entry.split(',')[0]);
-        let time = timeToMinutes(entry.split(',')[1].split(' - ')[0])-480;
-        let duration = courseDetails[inx].duration;
-        let grade = courseDetails[inx].year;
-        let department = courseDetails[inx].department;
-        let course_name = courseDetails[inx].courseName;
-
-        test.push(course_code + ',' + day + ',' + time + ',' + duration + ',' + classroom + ',' + grade + ',' + department + ',' + course_name);
-
-    });
-
-    optimizedSchedule.sort(                                                                 //this part it totaly for the output, nothing else
-        (a, b) => {
-            const nameA = a.split(',')[1].split(' - ')[0];
-            const nameB = b.split(',')[1].split(' - ')[0];
-            if (nameA < nameB)
-                return -1;
-
-            if (nameA > nameB)
-                return 1;
-
-            return 0;
-        }
-    )
-    .sort(
-        (a, b) => {
-            const nameA = a.split(',')[2].split(' - ')[1];
-            const nameB = b.split(',')[2].split(' - ')[1];
-            if (nameA < nameB)
-                return -1;
-
-            if (nameA > nameB)
-                return 1;
-
-            return 0;
-        }
-    )
-    .sort(
-        (a, b) => {
-            const nameA = a.split(',')[0];
-            const nameB = b.split(',')[0];
-            if (days.indexOf(nameA) < days.indexOf(nameB))
-                return -1;
-
-            if (days.indexOf(nameA) > days.indexOf(nameB))
-                return 1;
-
-            return 0;
-        }
-    )
-    .forEach(entry => console.log(entry));
-
-    // Write schedule to csv file
-    const outputData = test.join('\n');
-    fs.writeFileSync('Exam_Schedule.csv', outputData, 'utf-8');
-})();
 
