@@ -1,26 +1,53 @@
 const fs = require('fs');
 const readline = require('readline');
-const { start } = require('repl');
-const {scheduler} = require('timers/promises');
+const { assignClassrooms } = require('./classroom');
 const prompt = require('prompt-sync')({ sigint: true });
 
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const startHour = 0; // 9.00 AM
 const endHour = 540; // 6.00 PM
 
-let outputSchedule = [];
 const coursesFilePath = 'Fall_Courses.csv';
 const roomsFilePath = 'Classroom_Capacities.csv';
 var courses = [];
 var rooms = [];
 
 (async () => {
+    
     var initialSchedule = await assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, rooms);
 
-    const optimizedSchedule = await hillClimbingScheduler(initialSchedule, courses, rooms, 50000);
+    let initialSchedule2 = await hillClimbing(initialSchedule, rooms, 40000);                  //25000
+
+    const optimizedSchedule =  await simulatedAnnealingScheduler(initialSchedule2, rooms, 0.99994, 0.001);          //0.99994
+
+    //const optimizedSchedule = await hillClimbSpecified(initialSchedule, 50000);
+
+    /* let inx = 0;
+
+    initialSchedule
+    .sort(
+        (a, b) => {
+            let dayA = days.indexOf(a.day);
+            let dayB = days.indexOf(b.day);
+
+            if (dayA < dayB)
+                return -1;
+
+            if (dayA > dayB)
+                return 1;
+
+            return 0;
+        }
+    )
+    .forEach(entry => {
+        initialSchedule2[inx] = entry;
+        inx++;
+    }); */
+
+    // await geneticAlgorithmScheduler(initialSchedule2, rooms, 10000,0.3);       
 
     var test = [];
-    test.push('course_code,day,time,duration,classroom,grade,department,course_name')
+    test.push('course_code,day,time,duration,classroom,grade,department,course_name,professor_name')
 
     optimizedSchedule
     .sort(
@@ -60,8 +87,9 @@ var rooms = [];
         let grade = entry.course.year;
         let department = entry.course.department;
         let course_name = entry.course.courseName;
+        let professor_name = entry.course.professorName;
 
-        test.push(course_code + ',' + day + ',' + time + ',' + duration + ',' + classroom + ',' + grade + ',' + department + ',' + course_name);
+        test.push(course_code + ',' + day + ',' + time + ',' + duration + ',' + classroom + ',' + grade + ',' + department + ',' + course_name + ',' + professor_name);
 
     });
 
@@ -92,7 +120,7 @@ async function assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, roo
     const coursesLines = await readFileLines(coursesFilePath);
     const roomsLines = await readFileLines(roomsFilePath);
 
-    var tempRooms = roomsLines.map(line => ({ roomId: line.split(',')[0], roomSize: line.split(',')[1], nextAvailableTime: startHour * 60, nextAvailableDay: 0, blockedTime: Infinity }));
+    var tempRooms = roomsLines.map(line => ({ roomId: line.split(',')[0], roomSize: line.split(',')[1]}));
     for(const room of tempRooms){                                                              //get the rooms from the file and split them accordingly
         rooms.push(room);                                                                      //this for ensures that we're saving rooms to the global variable
     }
@@ -166,7 +194,7 @@ async function assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, roo
         }
     }
 
-    return schedule;
+    return schedule; //schedule
 }
 
 function errorCalculateFunction(schedule){                                          //error calculation function
@@ -179,12 +207,7 @@ function errorCalculateFunction(schedule){                                      
         const end1 = schedule[i].finishTime;
         const coursename1 = schedule[i].courseId;
         const duration1 = schedule[i].course.duration;
-
-        if(coursename1.substr(0,4) === 'CENG'){
-            if(start1 < 60){
-                error -= 100;
-            }
-        }
+        const prof1 = schedule[i].course.professorName;
 
         for(let j = i + 1; j < schedule.length; j++){
 
@@ -203,21 +226,30 @@ function errorCalculateFunction(schedule){                                      
                         const start2 = schedule[j].startTime;
                         const end2 = schedule[j].finishTime;
 
-                        if((start1 <= end2 && end1 >= start2) || (start2 <= end1 && end2 >= start1)){
+                        const prof2 = schedule[j].course.professorName;
+
+                        if((start1 <= end2 && end1 >= start2) && ((start1 == end2 ? end1 != start2+duration1+duration2: true) && (start2 == end1 ? end2 != start1+duration1+duration2: true))){
 
                             if(schedule[i].course.professorName === schedule[j].course.professorName){
-                                error -= 100; //lecturer conflict 
+                                error -= 50; //lecturer conflict 
                             }
     
                             if(schedule[i].course.department === schedule[j].course.department){
                                 if(parseInt(schedule[i].course.year) === parseInt(schedule[j].course.year)){
-                                    error -= 100; //year conflict 
+                                    error -= 150; //year conflict 
+                                }
+                                else if(Math.abs(parseInt(schedule[i].course.year) - parseInt(schedule[j].course.year)) == 1){
+                                    error -= 10
                                 }
                             }
 
                             if(schedule[i].room === schedule[j].room && schedule[i].room !== 'LAB'){
-                                error -= 150; //class conflict 
+                                error -= 50; //class conflict 
                             }
+                        }
+
+                        else if((start1 == end2 || start2 == end1) && prof1 === prof2 && duration1+duration2 > 240){
+                            error -= 50;
                         }
                     }
                 }
@@ -227,11 +259,7 @@ function errorCalculateFunction(schedule){                                      
     return error;
 }
 
-function roundNearest60(num){
-    return Math.round(num / 60) * 60;
-}
-
-async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterations){
+async function hillClimbing(initialSchedule, rooms, maxIterations){
     let currentSchedule = [...initialSchedule];
     let currentError = errorCalculateFunction(currentSchedule);
 
@@ -242,7 +270,7 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
         
         let newSchedule = [...currentSchedule];
         const randomIndex = Math.floor(Math.random() * newSchedule.length);                 //select course
-
+    
         var day = newSchedule[randomIndex].day;
         var start = newSchedule[randomIndex].startTime;
         var end = newSchedule[randomIndex].finishTime;
@@ -251,225 +279,281 @@ async function hillClimbingScheduler(initialSchedule, courses, rooms, maxIterati
         var room = newSchedule[randomIndex].room;
         const course = newSchedule[randomIndex].course;
 
-        if(iteration>maxIterations*0.9){
+        let newRoom = newSchedule[randomIndex].room;                                        //hold the current class
+        let newStartTime = start;
+        let newDayIndex = days.findIndex(dayy => dayy === day);
 
-            var flag = false;
-    
-            for(let j = 0; j < newSchedule.length; j++){
+        let chance = Math.random();
 
-                if(j != randomIndex){
-                    const day2 = newSchedule[j].day;
-        
-                    if(day === day2){
-                        const duration2 = newSchedule[j].course.duration;
+        if(chance < 0.01){
+            let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === newRoom);
+            try{
+                newRoom = rooms[Math.random() < 0.3 ? roomInx - 1: roomInx + 1].roomId;
+            } catch(e){
 
-                        if(duration != 0 && duration2 != 0){
-                            const coursename2 = newSchedule[j].courseId;
-
-                            if(coursename !== coursename2){
-                                const start2 = newSchedule[j].startTime;
-                                const end2 = newSchedule[j].finishTime;
-
-                                if((start < end2 && end > start2) || (start2 < end && end2 > start)){
-                                    let room2 = newSchedule[j].room;
-
-                                    if(newSchedule[randomIndex].course.professorName === newSchedule[j].course.professorName){
-                                        let counter = 0;
-
-                                        while(counter < 20 && !flag){
-                                            if(Math.random < 0.3){
-                                                const newDayIndex = Math.floor(Math.random() * days.length); 
-                                                newSchedule[randomIndex] = {day: days[newDayIndex], startTime: start, finishTime:end, courseId: coursename, room: room, course: course};
-                                            }
-                                            else{
-                                                let newStartTime = (start + (Math.floor(Math.random() * (9 - (end + start) / 60)) * 60) % 540 )
-                                                if(start == newStartTime)
-                                                    newStartTime += 60
-                                                newSchedule[randomIndex] = {day: day, startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: room, course: course};
-                                            }
-    
-                                            const newError = errorCalculateFunction(newSchedule);                      //calculate the error
-    
-                                            if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
-                                                currentSchedule = newSchedule;                                                  //take the new schedule
-                                                currentError = newError;
-                                                console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2));
-                                                console.log('prof hatası')
-                                                flag = true;
-                                                day = newSchedule[randomIndex].day;
-                                                start = newSchedule[randomIndex].startTime;
-                                                end = newSchedule[randomIndex].finishTime;
-                                            }
-                                            if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
-                                                console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
-                                                return currentSchedule;
-                                            }
-
-                                            counter++;
-
-                                        }
-
-                                        flag = true;
-
-                                    }
-            
-                                    else if(newSchedule[randomIndex].course.department === newSchedule[j].course.department){
-                                        if(newSchedule[randomIndex].course.year === newSchedule[j].course.year){
-
-                                            let counter = 0;
-
-                                            while(counter < 20 && !flag){
-                                                if(Math.random < 0.3){
-                                                    const newDayIndex = Math.floor(Math.random() * days.length); 
-                                                    newSchedule[randomIndex] = {day: days[newDayIndex], startTime: start, finishTime:end, courseId: coursename, room: room, course: course};
-                                                }
-                                                else{
-                                                    let newStartTime = (start + (Math.floor(Math.random() * (9 - (end + start) / 60)) * 60) % 540 )
-                                                    if(start == newStartTime)
-                                                        newStartTime += 60
-                                                    newSchedule[randomIndex] = {day: day, startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: room, course: course};
-                                                }
-    
-                                                const newError = errorCalculateFunction(newSchedule);                      //calculate the error
-            
-                                                if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
-                                                    currentSchedule = newSchedule;                                                  //take the new schedule
-                                                    currentError = newError;
-                                                    console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2));
-                                                    console.log('sınıf hatası')
-                                                    flag = true;
-                                                    day = newSchedule[randomIndex].day;
-                                                    start = newSchedule[randomIndex].startTime;
-                                                    end = newSchedule[randomIndex].finishTime;
-                                                }
-                                                if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
-                                                    console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
-                                                    return currentSchedule;
-                                                }
-
-                                                counter++;
-
-                                            }
-
-                                            flag = true;
-
-                                        }
-                                    }
-        
-                                    else if(room === room2 && room !== 'LAB'){
-
-                                        let counter = 0;
-
-                                        while(counter < 20 && !flag){
-                                            let newRoom = room;                                                                 //hold the current class
-                                            let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === room);
-                                            if(roomInx != -1 && roomInx != rooms.length-1){
-                                                newRoom = rooms[rooms.findIndex(roomTemp => roomTemp.roomId === room) + 1].roomId;
-                                            }
-                                                                                                                                //select random new day and our
-                                            newSchedule[randomIndex] = {day: day, startTime: start, finishTime:end, courseId: coursename, room: newRoom, course: course};
-                                                                                                                                //add to the new schedule
-                                            const newError = errorCalculateFunction(newSchedule);                      //calculate the error
-
-                                            if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
-                                                currentSchedule = newSchedule;                                                  //take the new schedule
-                                                currentError = newError;
-                                                console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2));
-                                                console.log('oda hatası')
-                                                flag = true;
-                                                room = newSchedule[randomIndex].room;
-                                            }
-                                            if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
-                                                console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
-                                                return currentSchedule;
-                                            }
-
-                                            counter++;
-
-                                        }
-
-                                        flag = true;
-                                    
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if(!flag){
-                let newRoom = room;                                                                                         //hold the current class
-
-                const newDayIndex = Math.floor(Math.random() * days.length); 
-                let newStartTime = (start + (Math.floor(Math.random() * (9 - (end + start) / 60)) * 60) % 540 )
-
-                if(Math.random() < 0.1){                                                              
-                    let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === room);
-                    if(roomInx != -1 && roomInx != rooms.length-1){
-                        newRoom = rooms[rooms.findIndex(roomTemp => roomTemp.roomId === room) + 1].roomId;
-                    }
-                }
-                                                                                                    //select random new day and our
-                newSchedule[randomIndex] = {day: days[newDayIndex], startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: newRoom, course: course};
-                                                                                                    //add to the new schedule
-                const newError = errorCalculateFunction(newSchedule);                      //calculate the error
-
-                if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
-                    currentSchedule = newSchedule;                                                  //take the new schedule
-                    currentError = newError;
-                    console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2));
-                    day = newSchedule[randomIndex].day;
-                    start = newSchedule[randomIndex].startTime;
-                    end = newSchedule[randomIndex].finishTime;
-                    room = newSchedule[randomIndex].room;
-                }
-                if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
-                    console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
-                    return currentSchedule;
-                }
             }
         }
+        else if(chance < 0.6){
+            newStartTime = (Math.floor(Math.random() * (((endHour - startHour) / 60) - duration / 60)) * 60)
+            if(start == newStartTime)
+                newStartTime += 60
+        }
         else{
-            let newRoom = newSchedule[randomIndex].room;                                                                                         //hold the current class
-            let newStartTime = start;
-            let newDayIndex = days.findIndex(dayy => dayy === day);
+            newDayIndex = Math.floor(Math.random() * days.length); 
+        }
+                                                                                            //select random new day and our
+        newSchedule[randomIndex] = {day: days[newDayIndex], startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: newRoom, course: course};
+                                                                                            //add to the new schedule
+        
+        const newError = errorCalculateFunction(newSchedule);                      //calculate the error
 
-            let chance = Math.random();
-
-            if(chance < 0.01){
-                let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === newRoom);
-                if(roomInx != -1 && roomInx != rooms.length-1){
-                    newRoom = rooms[roomInx + 1].roomId;
-                }
-            }
-            else if(chance < 0.6){
-                newStartTime = (start + (Math.floor(Math.random() * (9 - (end + start) / 60)) * 60) % 540 )
-                if(start == newStartTime)
-                    newStartTime += 60
-            }
-            else{
-                newDayIndex = Math.floor(Math.random() * days.length); 
-            }
-                                                                                                //select random new day and our
-            newSchedule[randomIndex] = {day: days[newDayIndex], startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: newRoom, course: course};
-                                                                                                //add to the new schedule
-            
-            const newError = errorCalculateFunction(newSchedule);                      //calculate the error
-
-            if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
-                currentSchedule = newSchedule;                                                  //take the new schedule
-                currentError = newError;
-                console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2));
-            }
-            if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
-                console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
-                return currentSchedule;
-            }
+        if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
+            currentSchedule = newSchedule;                                                  //take the new schedule
+            currentError = newError;
+            console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2) + ' -HC');
+        }
+        if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
+            console.log('Found with ' + currentError + ' error' + ' in ' + iteration + 'th iteration');
+            return currentSchedule;
         }
 
     }
+
     return currentSchedule;
+
 }
 
+async function simulatedAnnealingScheduler(initialSchedule, rooms, cooling, finish) {
+    let currentSchedule = [...initialSchedule];
+    let currentError = errorCalculateFunction(currentSchedule);
 
+    let minimum;
+
+    temperature = 10;
+    let iteration = 0;
+  
+    while (temperature > finish) {
+        iteration++;
+        let newSchedule = [...currentSchedule];
+        const randomIndex = Math.floor(Math.random() * newSchedule.length);
+  
+        var day = newSchedule[randomIndex].day;
+        var start = newSchedule[randomIndex].startTime;
+        var end = newSchedule[randomIndex].finishTime;
+        var coursename = newSchedule[randomIndex].courseId;
+        var duration = newSchedule[randomIndex].course.duration;
+        var room = newSchedule[randomIndex].room;
+        const course = newSchedule[randomIndex].course;
+  
+        let newRoom = newSchedule[randomIndex].room;
+        let newStartTime = start;
+        let newDayIndex = days.findIndex(dayy => dayy === day);
+  
+        let chance = Math.random();
+  
+        if (chance < 0.1) {
+            let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === newRoom);
+            try{
+                newRoom = rooms[Math.random() < 0.3 ? roomInx - 1: roomInx + 1].roomId;
+            } catch(e){
+
+            }
+        }
+        else if (chance < 0.4) {
+            newStartTime = (Math.floor(Math.random() * (((endHour - startHour) / 60) - duration / 60)) * 60)
+            if (start == newStartTime)
+                newStartTime += 60
+        }
+        else {
+            newDayIndex = Math.floor(Math.random() * days.length);
+        }
+  
+        newSchedule[randomIndex] = {day: days[newDayIndex], startTime: newStartTime, finishTime:newStartTime + duration, courseId: coursename, room: newRoom, course: course};
+  
+        const newError = errorCalculateFunction(newSchedule);
+
+        if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
+            console.log('Found with ' + newError + 'Error' + ' in' + iteration + 'th iteration');
+            return newSchedule;
+        }
+        else if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
+            currentSchedule = newSchedule;
+            minimum = newSchedule;                                                 
+            currentError = newError;
+            console.log(currentError+ ' ' + iteration + ' -SA');
+        }
+        else{
+            if (Math.random() < Math.exp((newError - currentError) / temperature)) {
+                currentSchedule = newSchedule;
+                currentError = newError;
+                console.log(currentError+' '+iteration + ' -SA')
+            }
+        }
+  
+      temperature *= cooling;
+    }
+  
+    return minimum;
+  }
+
+
+  //----------------------------------------
+
+  function calculateFitness(schedule) {
+    return errorCalculateFunction(schedule); // Note the negative sign to convert error to fitness
+  }
+  
+  function crossover(parent1, parent2) {
+    const child = structuredClone(parent1); // Using structuredClone to avoid modifying the original parents
+    const crossoverPoint = Math.floor(Math.random() * 5);
+  
+    let inx = 0;
+
+    while(days.indexOf(parent2[inx].day) < crossoverPoint){ 
+        inx++;
+    }
+    
+    while(inx < parent2.length){
+        child[inx] = parent2[inx]
+        inx++;
+    }
+  
+    return child;
+  }
+  
+  function mutate(schedule, mutationRate) {
+    const mutatedSchedule = structuredClone(schedule); // Using structuredClone to avoid modifying the original schedule
+    const mutationChance = Math.random();
+  
+    if (mutationChance < mutationRate) {
+      const randomIndex = Math.floor(Math.random() * mutatedSchedule.length);
+      const day = mutatedSchedule[randomIndex].day;
+      const start = mutatedSchedule[randomIndex].startTime;
+      const end = mutatedSchedule[randomIndex].finishTime;
+      const coursename = mutatedSchedule[randomIndex].courseId;
+      const duration = mutatedSchedule[randomIndex].course.duration;
+      let newRoom = mutatedSchedule[randomIndex].room;
+      let newStartTime = start;
+      let newDayIndex = days.findIndex((dayy) => dayy === day);
+  
+      const chance = Math.random();
+  
+      if (chance < 0.1) {
+        let roomInx = rooms.findIndex((roomTemp) => roomTemp.roomId === newRoom);
+        if(roomInx != -1 && roomInx != rooms.length - 1) {
+          newRoom = rooms[roomInx + 1].roomId;
+        }
+      } 
+      else if (chance < 0.6) {
+        newStartTime = (Math.floor(Math.random() * (((endHour - startHour) / 60) - duration / 60)) * 60)
+        if (start == newStartTime) newStartTime += 60;
+      } 
+      else {
+        newDayIndex = Math.floor(Math.random() * days.length);
+      }
+  
+      mutatedSchedule[randomIndex] = {
+        day: days[newDayIndex],
+        startTime: newStartTime,
+        finishTime: newStartTime + duration,
+        courseId: coursename,
+        room: newRoom,
+        course: mutatedSchedule[randomIndex].course,
+      };
+    }
+  
+    return mutatedSchedule;
+  }
+  
+  
+  async function geneticAlgorithmScheduler(initialSchedule, rooms, maxGenerations, mutationRate) {
+    let parent1 = [...initialSchedule];
+    let parent2 = [...initialSchedule];
+    currentSchedule = [...initialSchedule];
+    let currentFitness = calculateFitness(parent1);
+  
+    for (let generation = 0; generation < maxGenerations; generation++) {
+      parent2 = mutate(parent2, mutationRate); // You can change this to another randomly selected schedule from the population
+  
+      const child = crossover(parent1, parent2);
+      const mutatedChild = mutate(child, mutationRate);
+  
+      const childFitness = calculateFitness(child);
+      const mutatedChildFitness = calculateFitness(mutatedChild);
+  
+      if (mutatedChildFitness > childFitness && mutatedChildFitness > currentFitness) {
+        currentSchedule = mutatedChild;
+        currentFitness = mutatedChildFitness;
+      } else if (childFitness > currentFitness) {
+        currentSchedule = child;
+        currentFitness = childFitness;
+      }
+  
+      console.log(`Generation ${generation}: Fitness ${currentFitness}`);
+  
+      if (currentFitness === 0) {
+        console.log("Found optimal schedule with 0 error in generation", generation);
+        break;
+      }
+    }
+  
+    return currentSchedule;
+  } 
+
+
+  async function hillClimbSpecified(initialSchedule, maxIterations){
+    let currentSchedule = [...initialSchedule];
+    let currentError = errorCalculateFunction(currentSchedule);
+
+    if(currentError == 0)
+        return initialSchedule;
+
+    for(let iteration = 0; iteration < maxIterations; iteration++){                         //Randomly move one course to a new time slot
+        
+        let newSchedule = [...currentSchedule];
+        const randomIndex1 = Math.floor(Math.random() * newSchedule.length);                 //select course
+        var randomIndex2 = Math.floor(Math.random() * newSchedule.length); 
+
+        while(randomIndex1 == randomIndex2){
+            randomIndex2 = Math.floor(Math.random() * newSchedule.length);
+        }
+
+
+        var day1 = newSchedule[randomIndex1].day;
+        var start1 = newSchedule[randomIndex1].startTime;
+        var coursename1 = newSchedule[randomIndex1].courseId;
+        var duration1 = newSchedule[randomIndex1].course.duration;
+        var room1 = newSchedule[randomIndex1].room;
+        const course1 = newSchedule[randomIndex1].course;
+
+
+        var day2 = newSchedule[randomIndex2].day;
+        var start2 = newSchedule[randomIndex2].startTime;
+        var coursename2 = newSchedule[randomIndex2].courseId;
+        var duration2 = newSchedule[randomIndex2].course.duration;
+        var room2 = newSchedule[randomIndex2].room;
+        const course2 = newSchedule[randomIndex2].course;
+
+        newSchedule[randomIndex1] = {day: day2, startTime: start2, finishTime:start2+duration1, courseId: coursename1, room: room1, course: course1};
+        newSchedule[randomIndex2] = {day: day1, startTime: start1, finishTime:start1+duration2, courseId: coursename2, room: room2, course: course2};
+
+        const newError = errorCalculateFunction(newSchedule);                      //calculate the error
+
+        console.log(newError+' '+iteration + ' -HCS')
+
+        if(newError > currentError){                                                        //if the error is better (it's negative so I used > sign)
+            currentSchedule = newSchedule;                                                  //take the new schedule
+            currentError = newError;
+            console.log(currentError+ ' ' + '%'+(Math.round((100*iteration/maxIterations) * 100) / 100).toFixed(2) + ' -HCS');
+        }
+        if(newError == 0){                                                                  //if error is 0 then it's the perfect schedule
+            console.log('Found with ' + currentError + 'Error' + ' in' + iteration + 'th iteration');
+            return currentSchedule;
+        }
+        
+
+    }
+
+    return currentSchedule;
+
+}
