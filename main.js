@@ -7,12 +7,14 @@ const endHour = 540;                                                            
 
 const coursesFilePath = 'Fall_Courses.csv';
 const roomsFilePath = 'Classroom_Capacities.csv';
+const constrainsFilePath = 'constrains.csv';
 var courses = [];                                                                                                   //They are our global input arrays 
 var rooms = [];
+var constrains = [];
 
 (async () => {                                                                                                      //########   MAIN FUNCTION   ########
-
-    var initialSchedule = await assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, rooms);               //Create a day 0 trial
+                                                                                                                    //Create a day 0 trial
+    var initialSchedule = await assignCoursesToRooms(coursesFilePath, roomsFilePath,constrainsFilePath, courses, rooms, constrains);              
 
     var initialSchedule2 = await hillClimbing(initialSchedule, rooms, 30000);                                       //20000-30000 for best results
 
@@ -114,9 +116,10 @@ async function readFileLines(filePath){                                         
     return lines.slice(1);                                                                                          //delete the first like which has no data
 }
 
-async function assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, rooms){                                //########  Create day 0 function  ########
+async function assignCoursesToRooms(coursesFilePath, roomsFilePath, constrainsFilePath, courses, rooms, constrains){//########  Create day 0 function  ########
     const coursesLines = await readFileLines(coursesFilePath);
     const roomsLines = await readFileLines(roomsFilePath);
+    const constrainLines = await readFileLines(constrainsFilePath);
 
     var tempRooms = roomsLines.map(line => ({ roomId: line.split(',')[0], roomSize: line.split(',')[1]}));
     for(const room of tempRooms){                                                                                   //get the rooms from the file and split them accordingly
@@ -134,11 +137,15 @@ async function assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, roo
         facetoface: line.split(';')[4],
         courseName: line.split(';')[2]
     }));
-
     for(const course of courseDetails){                                                                             //get the courses 
         courses.push(course);                                                                                       //this is for ensuring that we're saving courses to the global variable
     }
     courses.sort((a,b) => a.duration - b.duration);                                                                 //sort them based on their durations
+
+    let constrainTemp = constrainLines.map(line => ({ lecturerName: line.split(',')[0], day: line.split(',')[1]}));
+    for(const constrain of constrainTemp){                                                                          //get the rooms from the file and split them accordingly
+        constrains.push(constrain);                                                                                //this for ensures that we're saving rooms to the global variable
+    }
 
     let schedule = [];                                                                                              //our schedule
 
@@ -146,7 +153,6 @@ async function assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, roo
                                                                                                                     //add a spesified lecture
     blockHour = prompt('Do you want to block a specific hour? (y/n): ').toLowerCase() === 'y';
     let blockedName,blockedProf,blockedDepartment,blockedMin,blockedNumber,blockedYear,blockFullName;
-    blockedMin = 0;
     if(blockHour){
         flagBlocked = 0;
         blockedName = prompt('Name of the lecture? (Example: TIT101): ');
@@ -154,8 +160,8 @@ async function assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, roo
         blockedDepartment = prompt('Name of the department? (Example: CENG): ');
         blockedMin = prompt('How many minutes will it take? (Example: 60): ');
         blockedNumber = prompt('How many students will take? (Example: 78): ');
-        blockedYear = prompt('Which year students will take the lecture? (Example: 2)');
-        blockFullName = prompt('What is the full name of the lecture?');
+        blockedYear = prompt('Which year students will take the lecture? (Example: 2): ');
+        blockFullName = prompt('What is the full name of the lecture? : ');
 
         blockedNumber = parseInt(blockedNumber);
         blockedMin = parseInt(blockedMin);
@@ -198,7 +204,9 @@ async function assignCoursesToRooms(coursesFilePath, roomsFilePath, courses, roo
 function errorCalculateFunction(schedule){                                                                          //########  Error calculation  ########
     let error = 0;
 
-    for(let i = 0; i < schedule.length; i++){                                                                       //linear search
+    let len = schedule.length;
+
+    for(let i = 0; i < len; i++){                                                                       //linear search
                                                                                                                     //note to myself: try sort first then calculate error
         const day1 = schedule[i].day;
         const start1 = schedule[i].startTime;
@@ -209,7 +217,16 @@ function errorCalculateFunction(schedule){                                      
         const year1 = schedule[i].course.year;
         const dep1 = schedule[i].course.department;
 
-        for(let j = i + 1; j < schedule.length; j++){
+        for(let a = 0; a < constrains.length; a++){
+            if(constrains[a].lecturerName === prof1){
+                if(constrains[a].day === day1){
+                    error -= 1000;
+                }
+            }
+    
+        }
+
+        for(let j = i + 1; j < len; j++){
 
             const day2 = schedule[j].day;
 
@@ -554,7 +571,7 @@ async function simulatedAnnealingScheduler(initialSchedule, rooms, cooling, fini
         newSchedule[randomIndex1] = {day: day2, startTime: start2, finishTime:start2+duration1, courseId: coursename1, room: room1, course: course1};
         newSchedule[randomIndex2] = {day: day1, startTime: start1, finishTime:start1+duration2, courseId: coursename2, room: room2, course: course2};
 
-        const newError = errorCalculateFunction(newSchedule);                      //calculate the error
+        const newError = errorCalculateFunction(newSchedule);                               //calculate the error
 
         console.log(newError+' '+iteration + ' -HCS')
 
