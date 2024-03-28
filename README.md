@@ -1,6 +1,6 @@
-# ExamSchedule
+# LectureScheduler
 
-It's an exam scheduler project for using in our university. 
+It's an lecture scheduler project for using in our university. 
         
 To run:
 
