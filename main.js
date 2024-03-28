@@ -7,18 +7,22 @@ const endHour = 540;                                                            
 
 const coursesFilePath = 'Fall_Courses.csv';
 const roomsFilePath = 'Classroom_Capacities.csv';
-const constrainsFilePath = 'constrains.csv';
+const busyLecturerConstrainsFilePath = 'constrains.csv';
+const specifiedLectureConstrainsFilePath = 'constrains2.csv';
+const mandatoryLecturesFilePath = 'mandatory.csv';
 var courses = [];                                                                                                   //They are our global input arrays 
 var rooms = [];
-var constrains = [];
+var busyLecturerConstrains = [];
+var specifiedLectureConstrains = [];
+var mandatoryLectures = [];
 
 (async () => {                                                                                                      //########   MAIN FUNCTION   ########
                                                                                                                     //Create a day 0 trial
-    var initialSchedule = await assignCoursesToRooms(coursesFilePath, roomsFilePath,constrainsFilePath, courses, rooms, constrains);              
+    var initialSchedule = await assignCoursesToRooms();              
 
-    var initialSchedule2 = await hillClimbing(initialSchedule, rooms, 30000);                                       //20000-30000 for best results
+    initialSchedule = await hillClimbing(initialSchedule, 30000);                                                   //20000-30000 for best results
 
-    const optimizedSchedule =  await simulatedAnnealingScheduler(initialSchedule2, rooms, 0.99994, 0.001);          //0.99994 for best result (CHANGING ISN'T SUGGESTED)
+    const optimizedSchedule =  await simulatedAnnealingScheduler(initialSchedule, 0.99994, 0.001);                  //0.99994 for best result (CHANGING ISN'T SUGGESTED)
 
     //const optimizedSchedule = await hillClimbSpecified(initialSchedule, 50000);
 
@@ -46,8 +50,8 @@ var constrains = [];
 
     // await geneticAlgorithmScheduler(initialSchedule2, rooms, 10000,0.3);       
 
-    var test = [];
-    test.push('course_code,day,time,duration,classroom,grade,department,course_name,professor_name')
+    var output = [];
+    output.push('course_code,day,time,duration,classroom,grade,department,course_name,professor_name')
 
     optimizedSchedule
     .sort(
@@ -89,14 +93,14 @@ var constrains = [];
         let course_name = entry.course.courseName;
         let professor_name = entry.course.professorName;
 
-        test.push(course_code + ',' + day + ',' + time + ',' + duration + ',' + classroom + ',' + grade + ',' + department + ',' + course_name + ',' + professor_name);
+        output.push(course_code + ',' + day + ',' + time + ',' + duration + ',' + classroom + ',' + grade + ',' + department + ',' + course_name + ',' + professor_name);
 
     });
 
     console.log('The output is created.')
 
                                                                                                                     // Write schedule to csv file
-    const outputData = test.join('\n');
+    const outputData = output.join('\n');
     fs.writeFileSync('Exam_Schedule.csv', outputData, 'utf-8');
 
 })();
@@ -116,10 +120,12 @@ async function readFileLines(filePath){                                         
     return lines.slice(1);                                                                                          //delete the first like which has no data
 }
 
-async function assignCoursesToRooms(coursesFilePath, roomsFilePath, constrainsFilePath, courses, rooms, constrains){//########  Create day 0 function  ########
+async function assignCoursesToRooms(){//########  Create day 0 function  ########
     const coursesLines = await readFileLines(coursesFilePath);
     const roomsLines = await readFileLines(roomsFilePath);
-    const constrainLines = await readFileLines(constrainsFilePath);
+    const busyLecturerConstrainLines = await readFileLines(busyLecturerConstrainsFilePath);
+    const specifiedLectureLines = await readFileLines(specifiedLectureConstrainsFilePath);
+    const mandatoryLines = await readFileLines(mandatoryLecturesFilePath);
 
     var tempRooms = roomsLines.map(line => ({ roomId: line.split(',')[0], roomSize: line.split(',')[1]}));
     for(const room of tempRooms){                                                                                   //get the rooms from the file and split them accordingly
@@ -142,9 +148,19 @@ async function assignCoursesToRooms(coursesFilePath, roomsFilePath, constrainsFi
     }
     courses.sort((a,b) => a.duration - b.duration);                                                                 //sort them based on their durations
 
-    let constrainTemp = constrainLines.map(line => ({ lecturerName: line.split(',')[0], day: line.split(',')[1]}));
-    for(const constrain of constrainTemp){                                                                          //get the rooms from the file and split them accordingly
-        constrains.push(constrain);                                                                                //this for ensures that we're saving rooms to the global variable
+    let constrainTemp = busyLecturerConstrainLines.map(line => ({ lecturerName: line.split(',')[0], day: line.split(',')[1]}));
+    for(const constrain of constrainTemp){                                                                          //get the busy lecturers from the file and split them accordingly
+        busyLecturerConstrains.push(constrain);                                                                     //this for ensures that we're saving busy lecturers to the global variable
+    }
+
+    let constrainTemp2 = specifiedLectureLines.map(line => ({ lectureName: line.split(',')[0], day: line.split(',')[1], time: parseInt(line.split(',')[2])}));
+    for(const constrain of constrainTemp2){                                                                          //get the rooms specified lectures the file and split them accordingly
+        specifiedLectureConstrains.push(constrain);                                                                  //this for ensures that we're saving specified lectures to the global variable
+    }
+
+    let mandatoryTemp = mandatoryLines.map(line => ({ lectureName: line.split(',')[0]}));
+    for(const mandatory of mandatoryTemp){                                                                          //get the mandatory lectures from the file and split them accordingly
+        mandatoryLectures.push(mandatory);                                                                          //this for ensures that we're saving mandatory lectures to the global variable
     }
 
     let schedule = [];                                                                                              //our schedule
@@ -206,7 +222,7 @@ function errorCalculateFunction(schedule){                                      
 
     let len = schedule.length;
 
-    for(let i = 0; i < len; i++){                                                                       //linear search
+    for(let i = 0; i < len; i++){                                                                                   //linear search
                                                                                                                     //note to myself: try sort first then calculate error
         const day1 = schedule[i].day;
         const start1 = schedule[i].startTime;
@@ -217,14 +233,22 @@ function errorCalculateFunction(schedule){                                      
         const year1 = schedule[i].course.year;
         const dep1 = schedule[i].course.department;
 
-        for(let a = 0; a < constrains.length; a++){
-            if(constrains[a].lecturerName === prof1){
-                if(constrains[a].day === day1){
+        for(let a = 0; a < busyLecturerConstrains.length; a++){
+            if(busyLecturerConstrains[a].lecturerName === prof1){
+                if(busyLecturerConstrains[a].day === day1){
                     error -= 1000;
                 }
             }
-    
         }
+
+        for(let a = 0; a < specifiedLectureConstrains.length; a++){
+            if(specifiedLectureConstrains[a].lectureName === coursename1){
+                if(specifiedLectureConstrains[a].day != day1 || specifiedLectureConstrains[a].time != start1){
+                    error -= 1000;
+                }
+            }
+        }
+
 
         for(let j = i + 1; j < len; j++){
 
@@ -259,7 +283,12 @@ function errorCalculateFunction(schedule){                                      
                                 }
                                 else if(Math.abs(year1 - year2) == 1){                                              //and and their year is in a row it's an error
                                     if(year1 == 4 || year2 == 4){
-                                        error -= 5;
+                                        if(mandatoryLectures.indexOf(coursename1) > 0 && mandatoryLectures.indexOf(coursename2) > 0){
+                                            error -= 100;
+                                        }   
+                                        else{
+                                            error -= 5;
+                                        }
                                     }
                                     else{
                                         error -=20;
@@ -283,7 +312,7 @@ function errorCalculateFunction(schedule){                                      
     return error;
 }
 
-async function hillClimbing(initialSchedule, rooms, maxIterations){                                                 //########  Hill climb algorithm  ########
+async function hillClimbing(initialSchedule, maxIterations){                                                        //########  Hill climb algorithm  ########
     let currentSchedule = [...initialSchedule];                                                                     //save the initialSchedule
     let currentError = errorCalculateFunction(currentSchedule);                                                     //calculate the start error
 
@@ -347,7 +376,7 @@ async function hillClimbing(initialSchedule, rooms, maxIterations){             
 
 }
 
-async function simulatedAnnealingScheduler(initialSchedule, rooms, cooling, finish){                                //########  Simulated Anneling algorithm  ########
+async function simulatedAnnealingScheduler(initialSchedule, cooling, finish){                                       //########  Simulated Anneling algorithm  ########
     let currentSchedule = [...initialSchedule];                                                                     //save the initialSchedule
     let currentError = errorCalculateFunction(currentSchedule);                                                     //calculate the start error
 
