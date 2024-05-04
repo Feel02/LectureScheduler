@@ -143,6 +143,14 @@ async function assignCoursesToRooms(){                                          
         facetoface: line.split(';')[4],
         courseName: line.split(';')[2]
     }));
+
+    for(const coursesLinesTemp of coursesLines){
+        let course = coursesLinesTemp.split(';');
+        if(parseInt(course[5].split('+')[0]) !== 0 && parseInt(course[5].split('+')[1]) !== 0){
+            courseDetails.push({professorName: course[9], courseId: course[1] + ' LAB', duration: parseInt(course[5].split('+')[1]) * 60, numberOfStudents: parseInt(course[3]), department: course[10], year: parseInt(course[7]), facetoface: 'lab', courseName: course[2] + ' LAB'});
+        }
+    }
+
     for(const course of courseDetails){                                                                             //get the courses 
         courses.push(course);                                                                                       //this is for ensuring that we're saving courses to the global variable
     }
@@ -304,12 +312,12 @@ function errorCalculateFunction(schedule){                                      
                             error -= 50;    
                         }
 
-                        else if((start1 == end2 || start2 == end1) && dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same prof has a 2 lectures in a row it's an error
-                            error -= 50;    
+                        else if((start1 == end2 || start2 == end1) && dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same year&dep has a 2 lectures in a row it's an error
+                            error -= 30;    
                         }
 
-                        else if((start1+60 == end2 || start2+60 == end1) && dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same prof has a 2 lectures in a row it's an error
-                            error -= 50;    
+                        else if((start1+60 == end2 || start2+60 == end1) &&  dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same year&dep has a 2 lectures with just 1 hour gap it's an error
+                            error -= 20;    
                         }
                     }
                 }
@@ -346,11 +354,13 @@ async function hillClimbing(initialSchedule, maxIterations){                    
         let chance = Math.random();                                                                                 //random chance
 
         if(chance < 0.01){                                                                                          //if chance is less than 0.01, change the room
-            let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === newRoom);
-            try{
-                newRoom = rooms[Math.random() < 0.3 ? roomInx - 1: roomInx + 1].roomId;
-            } catch(e){
+            if(newRoom != 'LAB'){
+                let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === newRoom);
+                try{
+                    newRoom = rooms[Math.random() < 0.3 ? roomInx - 1: roomInx + 1].roomId;
+                } catch(e){
 
+                }
             }
         }
         else if(chance < 0.6){                                                                                      //else if chance is less 0.6, change the start time
@@ -413,11 +423,13 @@ async function simulatedAnnealingScheduler(initialSchedule, cooling, finish){   
         let chance = Math.random();                                                                                 //random chance
   
         if(chance < 0.1){                                                                                           //if chance is less than 0.1, change the room
-            let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === newRoom);
-            try{
-                newRoom = rooms[Math.random() < 0.3 ? roomInx - 1: roomInx + 1].roomId;                             //to one with bigger capacity or lower capacity
-            } catch(e){ 
+            if(newRoom != 'LAB'){
+                let roomInx = rooms.findIndex(roomTemp => roomTemp.roomId === newRoom);
+                try{
+                    newRoom = rooms[Math.random() < 0.3 ? roomInx - 1: roomInx + 1].roomId;                             //to one with bigger capacity or lower capacity
+                } catch(e){ 
 
+                }
             }
         }
         else if(chance < 0.4){
