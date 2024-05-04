@@ -120,7 +120,7 @@ async function readFileLines(filePath){                                         
     return lines.slice(1);                                                                                          //delete the first like which has no data
 }
 
-async function assignCoursesToRooms(){//########  Create day 0 function  ########
+async function assignCoursesToRooms(){                                                                              //########  Create day 0 function  ########
     const coursesLines = await readFileLines(coursesFilePath);
     const roomsLines = await readFileLines(roomsFilePath);
     const busyLecturerConstrainLines = await readFileLines(busyLecturerConstrainsFilePath);
@@ -267,12 +267,11 @@ function errorCalculateFunction(schedule){                                      
                         const start2 = schedule[j].startTime;
                         const end2 = schedule[j].finishTime;
                         const prof2 = schedule[j].course.professorName;
+                        const dep2 = schedule[j].course.department;
+                        const year2 = schedule[j].course.year;
 
                         if((start1 <= end2 && end1 >= start2) && ((start1 == end2 ? end1 != start2+duration1+duration2: true) && (start2 == end1 ? end2 != start1+duration1+duration2: true))){
                                                                                                                     //if they intersect
-                            const year2 = schedule[j].course.year;
-                            const dep2 = schedule[j].course.department;
-
                             if(prof1 === prof2){                                                                    //and if their prof is same it's an error
                                 error -= 50; //lecturer conflict 
                             }
@@ -302,6 +301,14 @@ function errorCalculateFunction(schedule){                                      
                         }
 
                         else if((start1 == end2 || start2 == end1) && prof1 === prof2 && duration1+duration2 > 240){//if they do not intersect but same prof has a 2 lectures in a row it's an error
+                            error -= 50;    
+                        }
+
+                        else if((start1 == end2 || start2 == end1) && dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same prof has a 2 lectures in a row it's an error
+                            error -= 50;    
+                        }
+
+                        else if((start1+60 == end2 || start2+60 == end1) && dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same prof has a 2 lectures in a row it's an error
                             error -= 50;    
                         }
                     }
