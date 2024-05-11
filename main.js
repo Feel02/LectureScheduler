@@ -269,56 +269,52 @@ function errorCalculateFunction(schedule){                                      
                 if(duration1 != 0 && duration2 != 0){                                                               //duration not zero
                     
                     const coursename2 = schedule[j].courseId;
+                    const start2 = schedule[j].startTime;
+                    const end2 = schedule[j].finishTime;
+                    const prof2 = schedule[j].course.professorName;
+                    const dep2 = schedule[j].course.department;
+                    const year2 = schedule[j].course.year;
 
-                    if(coursename1 !== coursename2){                                                                //diffirent courses
+                    if((start1 <= end2 && end1 >= start2) && ((start1 == end2 ? end1 != start2+duration1+duration2: true) && (start2 == end1 ? end2 != start1+duration1+duration2: true))){
+                                                                                                                //if they intersect
+                        if(prof1 === prof2){                                                                    //and if their prof is same it's an error
+                            error -= 50; //lecturer conflict 
+                        }
 
-                        const start2 = schedule[j].startTime;
-                        const end2 = schedule[j].finishTime;
-                        const prof2 = schedule[j].course.professorName;
-                        const dep2 = schedule[j].course.department;
-                        const year2 = schedule[j].course.year;
-
-                        if((start1 <= end2 && end1 >= start2) && ((start1 == end2 ? end1 != start2+duration1+duration2: true) && (start2 == end1 ? end2 != start1+duration1+duration2: true))){
-                                                                                                                    //if they intersect
-                            if(prof1 === prof2){                                                                    //and if their prof is same it's an error
-                                error -= 50; //lecturer conflict 
+                        if(dep1 === dep2){                                                                      //and if their department is same
+                            if(year1 === year2){                                                                //and and their year is same it's an error
+                                error -= 150; //year conflict 
                             }
-    
-                            if(dep1 === dep2){                                                                      //and if their department is same
-                                if(year1 === year2){                                                                //and and their year is same it's an error
-                                    error -= 150; //year conflict 
-                                }
-                                else if(Math.abs(year1 - year2) == 1){                                              //and and their year is in a row it's an error
-                                    if(year1 == 4 || year2 == 4){
-                                        if(mandatoryLectures.indexOf(coursename1) > 0 && mandatoryLectures.indexOf(coursename2) > 0){
-                                            error -= 100;
-                                        }   
-                                        else{
-                                            error -= 5;
-                                        }
-                                    }
+                            else if(Math.abs(year1 - year2) == 1){                                              //and and their year is in a row it's an error
+                                if(year1 == 4 || year2 == 4){
+                                    if(mandatoryLectures.indexOf(coursename1) > 0 && mandatoryLectures.indexOf(coursename2) > 0){
+                                        error -= 100;
+                                    }   
                                     else{
-                                        error -=20;
+                                        error -= 5;
                                     }
                                 }
+                                else{
+                                    error -=20;
+                                }
                             }
-
-                            if(schedule[i].room === schedule[j].room && schedule[i].room !== 'LAB'){                //and if they use the same classroom it's an error
-                                error -= 50; //class conflict 
-                            }
                         }
 
-                        else if((start1 == end2 || start2 == end1) && prof1 === prof2 && duration1+duration2 > 240){//if they do not intersect but same prof has a 2 lectures in a row it's an error
-                            error -= 50;    
+                        if(schedule[i].room === schedule[j].room && schedule[i].room !== 'LAB'){                //and if they use the same classroom it's an error
+                            error -= 50; //class conflict 
                         }
+                    }
 
-                        else if((start1 == end2 || start2 == end1) && dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same year&dep has a 2 lectures in a row it's an error
-                            error -= 30;    
-                        }
+                    else if((start1 == end2 || start2 == end1) && prof1 === prof2 && duration1+duration2 > 240){//if they do not intersect but same prof has a 2 lectures in a row it's an error
+                        error -= 50;    
+                    }
 
-                        else if((start1+60 == end2 || start2+60 == end1) &&  dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same year&dep has a 2 lectures with just 1 hour gap it's an error
-                            error -= 20;    
-                        }
+                    else if((start1 == end2 || start2 == end1) && dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same year&dep has a 2 lectures in a row it's an error
+                        error -= 30;    
+                    }
+
+                    else if((start1+60 == end2 || start2+60 == end1) &&  dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same year&dep has a 2 lectures with just 1 hour gap it's an error
+                        error -= 20;    
                     }
                 }
             }
