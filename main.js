@@ -101,7 +101,7 @@ var mandatoryLectures = [];
 
                                                                                                                     // Write schedule to csv file
     const outputData = output.join('\n');
-    fs.writeFileSync('Exam_Schedule.csv', outputData, 'utf-8');
+    fs.writeFileSync('Lecture_Schedule.csv', outputData, 'utf-8');
 
 })();
 
@@ -138,7 +138,7 @@ async function assignCoursesToRooms(){                                          
         courseId: line.split(';')[1],
         duration: parseInt((line.split(';')[5]).split('+')[0]) * 60 == 0 ? parseInt((line.split(';')[5]).split('+')[1]) * 60 : parseInt((line.split(';')[5]).split('+')[0]) * 60,
         numberOfStudents: parseInt((line.split(';')[3])),
-        department: line.split(';')[10],
+        department: line.split(';')[8],             //10
         year: parseInt(line.split(';')[7]),
         facetoface: line.split(';')[4],
         courseName: line.split(';')[2]
@@ -147,7 +147,7 @@ async function assignCoursesToRooms(){                                          
     for(const coursesLinesTemp of coursesLines){
         let course = coursesLinesTemp.split(';');
         if(parseInt(course[5].split('+')[0]) !== 0 && parseInt(course[5].split('+')[1]) !== 0){
-            courseDetails.push({professorName: course[9], courseId: course[1] + ' LAB', duration: parseInt(course[5].split('+')[1]) * 60, numberOfStudents: parseInt(course[3]), department: course[10], year: parseInt(course[7]), facetoface: 'lab', courseName: course[2] + ' LAB'});
+            courseDetails.push({professorName: course[9], courseId: course[1] + ' LAB', duration: parseInt(course[5].split('+')[1]) * 60, numberOfStudents: parseInt(course[3]), department: course[8], year: parseInt(course[7]), facetoface: 'lab', courseName: course[2] + ' LAB'});
         }
     }
 
