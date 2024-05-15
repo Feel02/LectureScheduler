@@ -18,4 +18,4 @@ Fall_Courses.csv:
 
 After running the program you can see the output from the console or use the link for visualizing schedule.
 
-https://rogrammer.github.io/Schedule_GUI/home.html
+https://feel02.github.io/UiTrialsForLectureScheduler/home.html
