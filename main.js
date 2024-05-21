@@ -306,7 +306,7 @@ function errorCalculateFunction(schedule){                                      
                                     }
                                 }
                                 else{
-                                    error -=20;
+                                    error -=10;
                                 }
                             }
                         }
@@ -320,7 +320,7 @@ function errorCalculateFunction(schedule){                                      
                         error -= 50;    
                     }
 
-                    else if((start1 == end2 || start2 == end1) && dep1 === dep2 && year1 === year2 && duration1+duration2 > 240){//if they do not intersect but same year&dep has a 2 lectures in a row it's an error
+                    else if((start1 == end2 || start2 == end1) && dep1 === dep2 && year1 === year2 && duration1+duration2 > 120){//if they do not intersect but same year&dep has a 2 lectures in a row it's an error
                         error -= 30;    
                     }
 
