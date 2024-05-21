@@ -105,14 +105,7 @@ var mandatoryLectures = [];
     
     const open = (await import('open')).default;
 
-    // Opens the URL in the default browser.
-    await open('https://feel02.github.io/UiTrialsForLectureScheduler/home.html');
- 
-    // Opens the URL in a specified browser.
-    // await open('https://sindresorhus.com', {app: 'firefox'});
- 
-    // Specify app arguments.
-    // await open('https://sindresorhus.com', {app: ['google chrome', '--incognito']});
+    require('child_process').exec('start https://feel02.github.io/UiTrialsForLectureScheduler/home.html');
 
 })();
 
