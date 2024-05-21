@@ -214,7 +214,24 @@ async function assignCoursesToRooms(){                                          
             continue;
         }
         else if(course.facetoface === 'lab'){                                                                       //if they are lab set their class as 'LAB'
-            schedule.push({day: days[Math.floor(Math.random() * days.length)], startTime: startHour, finishTime:course.duration, courseId: course.courseId, room: 'LAB', course: course});
+            if(course.department === 'MATEMATİK' && course.courseId.slice(0, 4) === 'MATH'){
+                let assigned = false;
+
+                for(const room of rooms){                                                                               //check every class
+                    if(assigned)
+                        break;
+
+                    if(parseInt(room.roomSize) < course.numberOfStudents)                                               //if the size is not enough skip the class
+                        continue;
+
+                    schedule.push({day: days[Math.floor(Math.random() * days.length)], startTime: startHour, finishTime:course.duration, courseId: course.courseId, room: room.roomId, course: course});
+                    assigned = true;
+
+                }
+            }
+            else{
+                schedule.push({day: days[Math.floor(Math.random() * days.length)], startTime: startHour, finishTime:course.duration, courseId: course.courseId, room: 'LAB', course: course});
+            }
         }
         else{                                                                                                       //if they are start course
             let assigned = false;
