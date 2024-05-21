@@ -102,6 +102,17 @@ var mandatoryLectures = [];
                                                                                                                     // Write schedule to csv file
     const outputData = output.join('\n');
     fs.writeFileSync('Lecture_Schedule.csv', outputData, 'utf-8');
+    
+    const open = (await import('open')).default;
+
+    // Opens the URL in the default browser.
+    await open('https://feel02.github.io/UiTrialsForLectureScheduler/home.html');
+ 
+    // Opens the URL in a specified browser.
+    // await open('https://sindresorhus.com', {app: 'firefox'});
+ 
+    // Specify app arguments.
+    // await open('https://sindresorhus.com', {app: ['google chrome', '--incognito']});
 
 })();
 
@@ -635,3 +646,4 @@ async function simulatedAnnealingScheduler(initialSchedule, cooling, finish){   
     return currentSchedule;
 
 }
+
