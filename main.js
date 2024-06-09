@@ -94,9 +94,7 @@ var splitLecturesConstrains = [];
     const outputData = output.join('\n');
     fs.writeFileSync(outputFilePath, outputData, 'utf-8');
     
-    const open = (await import('open')).default;
-
-    await open('https://feel02.github.io/UiTrialsForLectureScheduler/home.html');
+    require('child_process').exec('start https://feel02.github.io/UiTrialsForLectureScheduler/home.html');
 
 })();
 
