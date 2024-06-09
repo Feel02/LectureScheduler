@@ -6,20 +6,20 @@ const startHour = 0;                                                            
 const endHour = 540;                                                                                                // 6.00 PM ((18-9) * 60)
 
 /* 
-const coursesFilePath = process.argv.slice(2);                                                                      //courses
-const roomsFilePath = process.argv.slice(3);                                                                        //rooms
-const busyLecturerConstrainsFilePath = process.argv.slice(4);                                                       //busy lecturers
-const specifiedLectureConstrainsFilePath = process.argv.slice(5);                                                   //specified lectures
-const mandatoryLecturesFilePath = process.argv.slice(6);                                                            //mandatory lectures
-const splitLecturesFilePath = process.argv.slice(7);                                                                //split lectures
-const conflictFilePath = process.argv.slice(8);                                                                     //conflict file                          
-const outputFilePath = process.argv.slice(9);                                                                       //output file
+const coursesFilePath = process.argv[2];                                                                      //courses
+const roomsFilePath = process.argv[3];                                                                        //rooms
+const busyLecturerConstrainsFilePath = process.argv[4];                                                       //busy lecturers
+const specifiedLectureConstrainsFilePath = process.argv[5];                                                   //specified lectures
+const mandatoryLecturesFilePath = process.argv[6];                                                            //mandatory lectures
+const splitLecturesFilePath = process.argv[7];                                                                //split lectures
+const conflictFilePath = process.argv[8];                                                                     //conflict file                          
+const outputFilePath = process.argv[9];                                                                       //output file
 */
 
 const coursesFilePath = 'Spring_Courses.csv';
 const roomsFilePath = 'Classroom_Capacities.csv';
-const busyLecturerConstrainsFilePath = 'constrains.csv';
-const specifiedLectureConstrainsFilePath = 'constrains2.csv';
+const busyLecturerConstrainsFilePath = 'BusyLecturer.csv';
+const specifiedLectureConstrainsFilePath = 'SpecifiedLecture.csv';
 const mandatoryLecturesFilePath = 'mandatory.csv';
 const splitLecturesFilePath = 'split.csv';
 const conflictFilePath = 'conflict.csv';
